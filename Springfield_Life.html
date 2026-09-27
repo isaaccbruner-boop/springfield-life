@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Springfield Life</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#8fcf78;color:#17221a;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;left:10px;top:10px;background:rgba(255,255,255,.92);border-radius:14px;padding:10px 13px;box-shadow:0 3px 12px #0003;font-size:14px;z-index:3;min-width:170px}
+#hud b{font-size:18px}.stat{margin-top:4px}
+#help{position:fixed;right:10px;top:10px;background:#ffffffdd;padding:9px 12px;border-radius:12px;font-size:12px;z-index:3}
+#msg{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:#17221a;color:white;padding:11px 16px;border-radius:14px;z-index:4;display:none;max-width:90%;text-align:center}
+#controls{position:fixed;bottom:12px;left:12px;right:12px;display:flex;justify-content:space-between;z-index:5;pointer-events:none}
+.pad{display:grid;grid-template-columns:48px 48px 48px;grid-template-rows:48px 48px 48px;gap:4px;pointer-events:auto}
+.btn{border:0;border-radius:13px;background:#ffffffd9;box-shadow:0 3px 8px #0003;font-size:21px;font-weight:bold}
+.up{grid-column:2}.left{grid-column:1;grid-row:2}.down{grid-column:2;grid-row:3}.right{grid-column:3;grid-row:2}
+.actions{display:flex;gap:8px;align-items:end;pointer-events:auto}
+.action{width:64px;height:64px;border-radius:50%;border:0;background:#ffcc4d;box-shadow:0 4px 10px #0004;font-weight:bold}
+#start{position:fixed;inset:0;background:linear-gradient(#80c8ff,#e9f6ff);z-index:10;display:flex;align-items:center;justify-content:center;text-align:center}
+.card{background:#fff;border-radius:24px;padding:28px;max-width:430px;margin:20px;box-shadow:0 10px 30px #0003}
+.card h1{font-size:38px;margin:0 0 6px}.card p{line-height:1.45}
+.play{border:0;border-radius:15px;background:#2457d6;color:white;font-size:19px;font-weight:bold;padding:14px 28px}
+@media(min-width:800px){#controls{display:none}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="start">
+  <div class="card">
+    <h1>Springfield Life</h1>
+    <p><b>Open-world regular life in Springfield, Missouri.</b></p>
+    <p>Go to school, get a job, buy food and clothes, shoot hoops, visit friends, explore town, and decide how you spend your days.</p>
+    <button class="play" onclick="startGame()">START LIFE</button>
+    <p style="font-size:12px;color:#667">Desktop: WASD / Arrow Keys • Phone: use the controls</p>
+  </div>
+</div>
+
+<div id="hud">
+  <b id="time">Monday • 7:00 AM</b>
+  <div class="stat">💵 $<span id="money">80</span></div>
+  <div class="stat">⚡ Energy: <span id="energy">100</span>%</div>
+  <div class="stat">😊 Mood: <span id="mood">75</span>%</div>
+  <div class="stat">📍 <span id="place">Your House</span></div>
+</div>
+<div id="help">Walk around • Stand near a place and press <b>E</b></div>
+<div id="msg"></div>
+
+<div id="controls">
+  <div class="pad">
+    <button class="btn up" data-key="ArrowUp">▲</button>
+    <button class="btn left" data-key="ArrowLeft">◀</button>
+    <button class="btn down" data-key="ArrowDown">▼</button>
+    <button class="btn right" data-key="ArrowRight">▶</button>
+  </div>
+  <div class="actions">
+    <button class="action" id="interact">E<br><small>ACT</small></button>
+  </div>
+</div>
+
+<script>
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+let W,H,scale=1,started=false,last=0;
+function resize(){W=c.width=innerWidth;H=c.height=innerHeight;scale=Math.max(1,Math.min(1.5,innerWidth/900));}
+addEventListener('resize',resize);resize();
+
+const world={w:3000,h:2200};
+const player={x:520,y:470,r:18,speed:210};
+let cam={x:0,y:0};
+let keys={};
+let money=80,energy=100,mood=75,day=1,minutes=420,place="Your House";
+const days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+
+const roads=[
+ {x:0,y:650,w:3000,h:150},{x:0,y:1300,w:3000,h:150},
+ {x:900,y:0,w:150,h:2200},{x:1900,y:0,w:150,h:2200}
+];
+const buildings=[
+ {x:330,y:280,w:330,h:230,name:"Your House",type:"home",color:"#d9a66f"},
+ {x:1260,y:280,w:410,h:280,name:"Central High School",type:"school",color:"#b9c2d0"},
+ {x:2240,y:280,w:420,h:250,name:"Ozark Mall",type:"shop",color:"#d7dce2"},
+ {x:250,y:930,w:430,h:250,name:"Mercy Clinic",type:"clinic",color:"#e7eeee"},
+ {x:1210,y:940,w:360,h:230,name:"Grocery Store",type:"grocery",color:"#d8e5a2"},
+ {x:2190,y:930,w:430,h:260,name:"Fast Food",type:"food",color:"#f0bf79"},
+ {x:330,y:1600,w:420,h:270,name:"Downtown Coffee",type:"coffee",color:"#b98b68"},
+ {x:1210,y:1570,w:470,h:300,name:"Part-Time Job",type:"job",color:"#9bb5a0"},
+ {x:2220,y:1570,w:430,h:300,name:"Rec Center",type:"court",color:"#c99b6b"},
+ {x:1060,y:430,w:80,h:80,name:"Gas Station",type:"gas",color:"#e5e5e5"},
+ {x:1780,y:1530,w:80,h:90,name:"Library",type:"library",color:"#d3b4cf"}
+];
+const trees=[];
+for(let i=0;i<95;i++){
+ let x=80+((i*317)%2840),y=70+((i*173)%2050);
+ if(roads.some(r=>x>r.x-25&&x<r.x+r.w+25&&y>r.y-25&&y<r.y+r.h+25))continue;
+ if(buildings.some(b=>x>b.x-40&&x<b.x+b.w+40&&y>b.y-40&&y<b.y+b.h+40))continue;
+ trees.push({x,y,r:12+(i%9)});
+}
+const npcs=[];
+for(let i=0;i<28;i++){
+ npcs.push({x:180+((i*271)%2600),y:120+((i*149)%1900),vx:(i%3-1)*30,vy:((i+1)%3-1)*30,t:Math.random()*5});
+}
+function startGame(){document.getElementById('start').style.display='none';started=true;last=performance.now();requestAnimationFrame(loop);}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function nearest(){
+ let best=null,bd=999;
+ for(const b of buildings){let px=clamp(player.x,b.x,b.x+b.w),py=clamp(player.y,b.y,b.y+b.h);let d=Math.hypot(player.x-px,player.y-py);if(d<bd){bd=d;best=b}}
+ return bd<95?best:null;
+}
+function say(t){let m=document.getElementById('msg');m.textContent=t;m.style.display='block';clearTimeout(say.to);say.to=setTimeout(()=>m.style.display='none',2600)}
+function interact(){
+ const b=nearest(); if(!b){say("Nothing to do here. Explore Springfield!");return}
+ if(b.type==="home"){energy=100;mood=clamp(mood+12,0,100);minutes+=60;say("You relaxed at home for an hour. Energy restored.");}
+ if(b.type==="school"){if(minutes>=450&&minutes<930){energy=clamp(energy-25,0,100);mood=clamp(mood+4,0,100);minutes+=360;say("School day complete. You learned a lot!");}else say("School is open from 7:30 AM to 3:30 PM.");}
+ if(b.type==="shop"){if(money>=25){money-=25;mood=clamp(mood+12,0,100);say("You bought some new clothes for $25.");}else say("You need $25 to shop.");}
+ if(b.type==="grocery"){if(money>=12){money-=12;energy=clamp(energy+20,0,100);say("You bought groceries for $12.");}else say("You need $12 for groceries.");}
+ if(b.type==="food"){if(money>=10){money-=10;energy=clamp(energy+30,0,100);mood=clamp(mood+8,0,100);minutes+=30;say("You grabbed a meal for $10.");}else say("You need $10 for food.");}
+ if(b.type==="coffee"){if(money>=5){money-=5;energy=clamp(energy+12,0,100);mood=clamp(mood+10,0,100);minutes+=20;say("Coffee break! $5.");}else say("Coffee costs $5.");}
+ if(b.type==="job"){if(minutes>=540&&minutes<1260){money+=45;energy=clamp(energy-20,0,100);minutes+=240;say("You worked a shift and earned $45!");}else say("Your part-time job has shifts during the day.");}
+ if(b.type==="court"){energy=clamp(energy-15,0,100);mood=clamp(mood+22,0,100);minutes+=60;say("You played basketball for an hour. 🏀");}
+ if(b.type==="library"){mood=clamp(mood+8,0,100);minutes+=45;say("You studied at the library.");}
+ if(b.type==="clinic"){energy=clamp(energy+25,0,100);mood=clamp(mood+5,0,100);say("You took a rest at the clinic.");}
+ if(b.type==="gas"){say("Gas station — a useful stop if you eventually add cars!");}
+ updateHud();
+}
+function updateHud(){
+ let hr=Math.floor(minutes/60)%24,min=minutes%60;
+ document.getElementById('time').textContent=`${days[(day-1)%7]} • ${String(hr).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
+ document.getElementById('money').textContent=Math.floor(money);
+ document.getElementById('energy').textContent=Math.floor(energy);
+ document.getElementById('mood').textContent=Math.floor(mood);
+ const b=nearest();place=b?b.name:(player.x<1000?"West Springfield":player.x<2000?"Central Springfield":"East Springfield");
+ document.getElementById('place').textContent=place;
+}
+function update(dt){
+ let dx=(keys.ArrowRight||keys.d?1:0)-(keys.ArrowLeft||keys.a?1:0);
+ let dy=(keys.ArrowDown||keys.s?1:0)-(keys.ArrowUp||keys.w?1:0);
+ if(dx||dy){let l=Math.hypot(dx,dy);dx/=l;dy/=l;player.x+=dx*player.speed*dt;player.y+=dy*player.speed*dt;energy-=dt*.8;}
+ player.x=clamp(player.x,25,world.w-25);player.y=clamp(player.y,25,world.h-25);
+ minutes+=dt*3;
+ if(minutes>=1440){minutes-=1440;day++;money+=10;say("A new day begins. You received $10 allowance.");}
+ energy=clamp(energy,0,100);
+ if(energy<10)mood=clamp(mood-dt*1.5,0,100);
+ for(const n of npcs){n.t+=dt;n.x+=n.vx*dt;n.y+=n.vy*dt;if(n.x<40||n.x>2960)n.vx*=-1;if(n.y<40||n.y>2160)n.vy*=-1;}
+ updateHud();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ cam.x=clamp(player.x-W/2,0,world.w-W);cam.y=clamp(player.y-H/2,0,world.h-H);
+ ctx.save();ctx.translate(-cam.x,-cam.y);
+ ctx.fillStyle="#91cf79";ctx.fillRect(0,0,world.w,world.h);
+ // parks
+ ctx.fillStyle="#79bd68";ctx.fillRect(60,70,760,490);ctx.fillRect(2080,70,800,490);ctx.fillRect(70,1510,900,570);ctx.fillRect(1900,1440,980,650);
+ // roads
+ for(const r of roads){ctx.fillStyle="#555b61";ctx.fillRect(r.x,r.y,r.w,r.h);ctx.fillStyle="#d9d18d";
+  if(r.w>r.h)for(let x=r.x+15;x<r.x+r.w;x+=65)ctx.fillRect(x,r.y+r.h/2-3,35,6);
+  else for(let y=r.y+15;y<r.y+r.h;y+=65)ctx.fillRect(r.x+r.w/2-3,y,6,35);
+ }
+ // buildings
+ for(const b of buildings){
+  ctx.fillStyle="#0002";ctx.fillRect(b.x+7,b.y+9,b.w,b.h);
+  ctx.fillStyle=b.color;ctx.fillRect(b.x,b.y,b.w,b.h);
+  ctx.strokeStyle="#333";ctx.lineWidth=3;ctx.strokeRect(b.x,b.y,b.w,b.h);
+  ctx.fillStyle="#17221a";ctx.font="bold 18px Arial";ctx.textAlign="center";ctx.fillText(b.name,b.x+b.w/2,b.y+b.h/2);
+  ctx.font="12px Arial";ctx.fillText("Press E",b.x+b.w/2,b.y+b.h/2+22);
+ }
+ // trees
+ for(const t of trees){ctx.fillStyle="#5c9d55";ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,Math.PI*2);ctx.fill();ctx.fillStyle="#7a5736";ctx.fillRect(t.x-3,t.y+7,6,10);}
+ // NPCs
+ for(const n of npcs){ctx.fillStyle="#e7b18b";ctx.beginPath();ctx.arc(n.x,n.y-12,7,0,Math.PI*2);ctx.fill();ctx.fillStyle="#3569a8";ctx.fillRect(n.x-8,n.y-5,16,22);}
+ // player
+ ctx.fillStyle="#1f4bd6";ctx.beginPath();ctx.arc(player.x,player.y,player.r,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="white";ctx.beginPath();ctx.arc(player.x-6,player.y-4,3,0,Math.PI*2);ctx.arc(player.x+6,player.y-4,3,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#111";ctx.font="bold 12px Arial";ctx.textAlign="center";ctx.fillText("YOU",player.x,player.y-28);
+ ctx.restore();
+}
+function loop(now){let dt=Math.min(.04,(now-last)/1000);last=now;update(dt);draw();requestAnimationFrame(loop)}
+addEventListener('keydown',e=>{keys[e.key]=true;if(e.key.toLowerCase()==='e')interact()});
+addEventListener('keyup',e=>keys[e.key]=false);
+document.querySelectorAll('[data-key]').forEach(b=>{
+ const k=b.dataset.key;
+ b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true});
+ b.addEventListener('pointerup',e=>{e.preventDefault();keys[k]=false});
+ b.addEventListener('pointerleave',e=>keys[k]=false);
+});
+document.getElementById('interact').addEventListener('pointerdown',e=>{e.preventDefault();interact()});
+</script>
+</body>
+</html>
